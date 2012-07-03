@@ -1,0 +1,11 @@
+<Context antiJARLocking="true">
+	<Resource name="jdbc/openhds" 
+		auth="Container" 
+		type="javax.sql.DataSource" 
+		username="solarmal" 
+		password="myMbita2012ODK" 
+		driverClassName="com.mysql.jdbc.Driver"
+		url="jdbc:mysql://localhost/openhds?createDatabaseIfNotExist=true&amp;useUnicode=true&amp;characterEncoding=utf-8"
+		maxActive="10"
+		maxIdle="4" />
+</Context>

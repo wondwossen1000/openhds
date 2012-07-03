@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><config>
+	<entity name="Location">
+		<attributes>
+		</attributes>
+	</entity>
+	<entity name="Individual">
+		<attributes>
+		</attributes>
+	</entity>
+	<entity name="SocialGroup">
+		<attributes>
+		</attributes>
+	</entity>
+	<entity name="Visit">
+		<attributes>
+		</attributes>
+	</entity>
+</config>
