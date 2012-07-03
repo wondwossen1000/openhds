@@ -25,4 +25,9 @@ public interface CurrentUser {
      * @param privileges array of any privileges that this proxy user should have
      */
     public void setProxyUser(String username, String password, String[] privileges);
+    
+    /**
+     * Clears the current logged in user from the security session
+     */
+    public void clearCurrentUser();
 }

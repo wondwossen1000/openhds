@@ -6,10 +6,13 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -20,10 +23,12 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
+
 import org.apache.log4j.Logger;
 import org.openhds.controller.exception.ConstraintViolations;
 import org.openhds.controller.idgeneration.IdValidator;
 import org.openhds.controller.idgeneration.IndividualGenerator;
+import org.openhds.controller.service.CurrentUser;
 import org.openhds.controller.service.DeathService;
 import org.openhds.controller.service.EntityService;
 import org.openhds.controller.service.FieldWorkerService;
@@ -48,6 +53,7 @@ import org.openhds.domain.model.MigrationType;
 import org.openhds.domain.model.OutMigration;
 import org.openhds.domain.model.PregnancyObservation;
 import org.openhds.domain.model.PregnancyOutcome;
+import org.openhds.domain.model.PrivilegeConstants;
 import org.openhds.domain.model.ReferencedBaseEntity;
 import org.openhds.domain.model.ReferencedEntity;
 import org.openhds.domain.model.Relationship;
@@ -85,6 +91,7 @@ public class CoreWebServiceImpl {
     private IdValidator idUtilities;
     private SitePropertiesServiceImpl siteProperties;
     private IndividualGenerator indivGen;
+    private CurrentUser currentUser;
    
     @Context
     HttpServletRequest request;
@@ -851,7 +858,15 @@ public class CoreWebServiceImpl {
     @GET
     @Path("entityIds/{locationHierarchy}")
     public ReferencedEntity getIdsByLocationHierarchyLevel(@PathParam("locationHierarchy") String locationHierarchy) {
-       
+    	// since the service layer is used (which requires certain privileges), must proxy current user since no user is actually required
+    	// to be logged in
+    	boolean proxied = false;
+    	if (currentUser.getCurrentUser() == null) {
+    		currentUser.setProxyUser("mobile", "mobile", new String[]{ PrivilegeConstants.VIEW_ENTITY });
+    		proxied = true;
+    	}
+    		
+    	
     	ReferencedEntity refEntity = new ReferencedEntity();
         List<LocationHierarchy> hierarchyList = genericDao.findListByProperty(LocationHierarchy.class, "extId", locationHierarchy);
    
@@ -893,6 +908,11 @@ public class CoreWebServiceImpl {
                 refEntity.increaseCount();
                
         }
+        
+        if (proxied) {
+        	// clear current user if proxied, otherwise the user could become associated with a session
+        	currentUser.clearCurrentUser();
+        }
     
         return refEntity;
     }
@@ -933,6 +953,9 @@ public class CoreWebServiceImpl {
                         Map<String, String> params = new HashMap<String, String>();
                         params.put("firstname", indiv.getFirstName());
                         params.put("lastname", indiv.getLastName());
+                        
+                        Map<String, String> memberships = findMembershipForIndividual(indiv);
+                        params.putAll(memberships);
                        
                         if (indiv.getGender().equals(siteProperties.getMaleCode()))
                             params.put("gender", "M");
@@ -1000,7 +1023,35 @@ public class CoreWebServiceImpl {
         return output;
     }
                       
-    private boolean authenticateOrigin() {
+    private Map<String, String> findMembershipForIndividual(Individual indiv) {
+    	Map<String, String> socialGroupEntries = new HashMap<String, String>();
+    	// since the values are going in a map the keys must be unique
+    	// cnt is used to ensure names are unique within the map
+    	int cnt = 0;
+    	Set<Membership> memberships = indiv.getAllMemberships();
+    	for(Membership m : memberships) {
+    		socialGroupEntries.put("socialgroup" + cnt, m.getSocialGroup().getExtId());
+    		cnt++;
+    	}
+    	
+    	// this is additional logic to ensure head of house have memberships
+    	// its possible a household is created such that the head wasn't assign an explicit membership
+    	List<SocialGroup> groups = socialGroupService.getAllSocialGroups(indiv);
+    	if (groups.size() > 0) {
+    		// look for duplicates
+    		Collection<String> values = socialGroupEntries.values();
+    		for(SocialGroup sg : groups) {
+    			if (!values.contains(sg.getExtId())) {
+    				socialGroupEntries.put("socialgroup" + cnt, sg.getExtId());
+    				cnt++;
+    			}
+    		}
+    	}
+		
+    	return socialGroupEntries;
+	}
+
+	private boolean authenticateOrigin() {
         return whitelistService.evaluateAddress(request);
     }
 
@@ -1063,5 +1114,9 @@ public class CoreWebServiceImpl {
 
 	public void setIndivGen(IndividualGenerator indivGen) {
 		this.indivGen = indivGen;
+	}
+	
+	public void setCurrentUser(CurrentUser currentUser) {
+		this.currentUser = currentUser;
 	}
 }

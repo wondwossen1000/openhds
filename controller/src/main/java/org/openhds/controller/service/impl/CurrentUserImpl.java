@@ -120,4 +120,9 @@ public class CurrentUserImpl implements CurrentUser, BeanFactoryAware {
 	public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
 		this.beanFactory = beanFactory;
 	}
+
+	@Override
+	public void clearCurrentUser() {
+		SecurityContextHolder.clearContext();
+	}
 }
