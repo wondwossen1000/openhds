@@ -961,6 +961,8 @@ public class CoreWebServiceImpl {
                             params.put("gender", "M");
                         else if (indiv.getGender().equals(siteProperties.getFemaleCode()))
                             params.put("gender", "F");
+                        
+                       	params.put("location", residency.getLocation().getExtId());
                        
                         entity.setExtId(indiv.getExtId());
                         entity.setType("individual");
