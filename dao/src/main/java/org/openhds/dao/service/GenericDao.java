@@ -73,4 +73,6 @@ public interface GenericDao {
     <T> Map<T,T> getClassMetaData();
     
     Session getSession();
+    
+    void evict(Object object);
 }

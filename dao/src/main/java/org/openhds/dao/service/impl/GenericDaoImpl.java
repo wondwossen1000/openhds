@@ -49,6 +49,7 @@ public class GenericDaoImpl implements GenericDao {
 	}
 	
 	@SuppressWarnings("unchecked")
+	@Transactional(readOnly=true)
 	public <T> List<T> findAll(Class<T> entityType, boolean filterDeleted) {
 		Criteria criteria = getSession().createCriteria(entityType);
 		
@@ -63,6 +64,7 @@ public class GenericDaoImpl implements GenericDao {
 		return getSession().createCriteria(entityType).setResultTransformer(Criteria.DISTINCT_ROOT_ENTITY).list();
 	}
 
+	@Transactional(readOnly=true)
 	public <T> T findByProperty(Class<T> entityType, String propertyName, Object value) {
 		return findByProperty(entityType, propertyName, value, false);
 	}
@@ -87,6 +89,7 @@ public class GenericDaoImpl implements GenericDao {
 	}
 	
 	@SuppressWarnings("unchecked")
+	@Transactional(readOnly=true)
 	public <T> List<T> findListByProperty(Class<T> entityType, String propertyName, Object value, boolean filterDeleted) {
         
 		Criteria criteria = getSession().createCriteria(entityType).setResultTransformer(Criteria.DISTINCT_ROOT_ENTITY).
@@ -187,4 +190,10 @@ public class GenericDaoImpl implements GenericDao {
     public <T> Map<T,T> getClassMetaData() {
     	return getSession().getSessionFactory().getAllClassMetadata();
     }
+
+	@Override
+	@Transactional(readOnly=true)
+	public void evict(Object object) {
+		getSession().evict(object);
+	}
 }

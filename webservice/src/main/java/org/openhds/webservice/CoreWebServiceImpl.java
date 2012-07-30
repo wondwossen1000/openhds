@@ -866,12 +866,20 @@ public class CoreWebServiceImpl {
     		proxied = true;
     	}
     		
-    	
     	ReferencedEntity refEntity = new ReferencedEntity();
         List<LocationHierarchy> hierarchyList = genericDao.findListByProperty(LocationHierarchy.class, "extId", locationHierarchy);
-   
-        for (LocationHierarchy item : hierarchyList) 
-        	refEntity = processLocationHierarchy(item, refEntity);
+        
+        boolean fetchedEntities = false;
+        List<SocialGroup> socialgroupList = null;
+        List<Visit> visitList = null;
+        for (LocationHierarchy item : hierarchyList) {
+        	if (!fetchedEntities) {
+        		socialgroupList = genericDao.findAll(SocialGroup.class, true);
+        		visitList = genericDao.findAll(Visit.class, true);
+        		fetchedEntities = true;
+        	}
+        	refEntity = processLocationHierarchy(item, refEntity, socialgroupList, visitList);
+        }
         
         // -- village --
             List<LocationHierarchy> villageList = genericDao.findAll(LocationHierarchy.class, false);
@@ -890,12 +898,9 @@ public class CoreWebServiceImpl {
             
         }
         
-        
         // -- fieldworker --
         List<FieldWorker> fwList = genericDao.findAll(FieldWorker.class,true);
         for (FieldWorker fw : fwList) {
-          
-        
             	ReferencedBaseEntity entity = new ReferencedBaseEntity();
             	Map<String, String> params = new HashMap<String, String>();
                 params.put("firstname", fw.getFirstName());
@@ -913,7 +918,7 @@ public class CoreWebServiceImpl {
         	// clear current user if proxied, otherwise the user could become associated with a session
         	currentUser.clearCurrentUser();
         }
-    
+        
         return refEntity;
     }
     
@@ -921,15 +926,17 @@ public class CoreWebServiceImpl {
      * Recursive function to perform a search on the location hierarchy when retrieving entity ids
      * by location hierarchy level.
      * @param item - the current item in the location hierarchy tree
+     * @param visitList 
+     * @param socialgroupList 
+     * @param individualList 
      */
-     public ReferencedEntity processLocationHierarchy(LocationHierarchy item, ReferencedEntity output) {
+     public ReferencedEntity processLocationHierarchy(LocationHierarchy item, ReferencedEntity output, List<SocialGroup> socialgroupList, List<Visit> visitList) {
            	 
         // base case
         if (item.getLevel().equals(locationService.getLowestLevel())) {
-           
             // obtain ids
             // -- location --
-            List<Location> locationList = genericDao.findListByProperty(Location.class, "locationLevel", item, true);
+        	List<Location> locationList = genericDao.findListByProperty(Location.class, "locationLevel", item, true);
             for (Location loc : locationList) {
                 ReferencedBaseEntity entity = new ReferencedBaseEntity();
                 Map<String, String> params = new HashMap<String, String>();
@@ -941,44 +948,14 @@ public class CoreWebServiceImpl {
                 output.getEntity().add(entity);
                 output.increaseCount();
             }
-           
-            // -- individual --
-            List<Individual> individualList = genericDao.findAll(Individual.class, true);
-            for (Individual indiv : individualList) {
-               
-                Residency residency = indiv.getCurrentResidency();
-                if (residency != null) {   
-                    if (residency.getLocation().getLocationLevel().getExtId().equals(item.getExtId())) {
-                        ReferencedBaseEntity entity = new ReferencedBaseEntity();
-                        Map<String, String> params = new HashMap<String, String>();
-                        params.put("firstname", indiv.getFirstName());
-                        params.put("lastname", indiv.getLastName());
-                        
-                        Map<String, String> memberships = findMembershipForIndividual(indiv);
-                        params.putAll(memberships);
-                       
-                        if (indiv.getGender().equals(siteProperties.getMaleCode()))
-                            params.put("gender", "M");
-                        else if (indiv.getGender().equals(siteProperties.getFemaleCode()))
-                            params.put("gender", "F");
-                        
-                       	Location location = residency.getLocation()	;
-                        params.put("location", location.getExtId());
-                        params.put("village", location.getLocationLevel().getExtId());
-                       
-                        entity.setExtId(indiv.getExtId());
-                        entity.setType("individual");
-                        entity.setParams(params);
-                        output.getEntity().add(entity);
-                        output.increaseCount();
-                    }   
-                }
-            }  
-           
+            
+            for(Location loc : locationList) {
+            	fetchIndividualsWithLocation(loc, output);
+            }
+
+            genericDao.evict(locationList);
             // -- social group --
-            List<SocialGroup> socialgroupList = genericDao.findAll(SocialGroup.class, true);
             for (SocialGroup sg : socialgroupList) {
-               
                 Residency residency = sg.getGroupHead().getCurrentResidency();
                 if (residency != null) {
                     if (residency.getLocation().getLocationLevel().getExtId().equals(item.getExtId())) {
@@ -996,7 +973,6 @@ public class CoreWebServiceImpl {
             }
            
             // -- visit --
-            List<Visit> visitList = genericDao.findAll(Visit.class, true);
             for (Visit visit : visitList) {
                 if (visit.getVisitLocation().getLocationLevel().equals(item)) {
                 	ReferencedBaseEntity entity = new ReferencedBaseEntity();
@@ -1010,8 +986,6 @@ public class CoreWebServiceImpl {
                     output.increaseCount();
                 }   
             }
-           
-
             
             return output;
         }
@@ -1020,14 +994,55 @@ public class CoreWebServiceImpl {
         List<LocationHierarchy> hierarchyList = genericDao.findListByProperty(LocationHierarchy.class, "parent", item);
        
         for (LocationHierarchy locationHierarchy : hierarchyList){
-            processLocationHierarchy(locationHierarchy, output);
+            processLocationHierarchy(locationHierarchy, output, socialgroupList, visitList);
         }
        
        
         return output;
     }
                       
-    private Map<String, String> findMembershipForIndividual(Individual indiv) {
+    private void fetchIndividualsWithLocation(Location loc, ReferencedEntity output) {
+        // -- individual --
+        List<Residency> residencies = genericDao.findListByProperty(Residency.class, "location", loc, true);
+		for (Residency residency : residencies) {
+			Individual indiv = residency.getIndividual();
+			if (!indiv.getCurrentResidency().getLocation().getExtId().equals(loc.getExtId())) {
+				continue;
+			}
+			long start = System.currentTimeMillis();			
+			ReferencedBaseEntity entity = new ReferencedBaseEntity();
+			Map<String, String> params = new HashMap<String, String>();
+			params.put("firstname", indiv.getFirstName());
+			params.put("lastname", indiv.getLastName());
+
+			Map<String, String> memberships = findMembershipForIndividual(indiv);
+			params.putAll(memberships);
+
+			if (indiv.getGender().equals(siteProperties.getMaleCode()))
+				params.put("gender", "M");
+			else if (indiv.getGender().equals(siteProperties.getFemaleCode()))
+				params.put("gender", "F");
+
+			Location location = residency.getLocation();
+			params.put("location", location.getExtId());
+			params.put("village", location.getLocationLevel().getExtId());
+
+			entity.setExtId(indiv.getExtId());
+			entity.setType("individual");
+			entity.setParams(params);
+			output.getEntity().add(entity);
+			output.increaseCount();
+			
+			genericDao.evict(indiv);
+			
+	        long duration = System.currentTimeMillis() - start;
+	        log.debug("Individual timing: " + duration);
+		}
+		
+		genericDao.evict(residencies);
+	}
+
+	private Map<String, String> findMembershipForIndividual(Individual indiv) {
     	Map<String, String> socialGroupEntries = new HashMap<String, String>();
     	// since the values are going in a map the keys must be unique
     	// cnt is used to ensure names are unique within the map
@@ -1037,6 +1052,8 @@ public class CoreWebServiceImpl {
     		socialGroupEntries.put("socialgroup" + cnt, m.getSocialGroup().getExtId());
     		cnt++;
     	}
+    	
+    	genericDao.evict(memberships);
     	
     	// this is additional logic to ensure head of house have memberships
     	// its possible a household is created such that the head wasn't assign an explicit membership
@@ -1051,6 +1068,8 @@ public class CoreWebServiceImpl {
     			}
     		}
     	}
+    	
+    	genericDao.evict(groups);
 		
     	return socialGroupEntries;
 	}
